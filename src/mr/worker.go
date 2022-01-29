@@ -1,10 +1,15 @@
 package mr
 
-import "fmt"
-import "log"
-import "net/rpc"
-import "hash/fnv"
-
+import (
+	"encoding/json"
+	"fmt"
+	"hash/fnv"
+	"io/ioutil"
+	"log"
+	"net/rpc"
+	"os"
+	"strings"
+)
 
 //
 // Map functions return a slice of KeyValue.
@@ -32,11 +37,162 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
 	// Your worker implementation here.
-
+	w := worker {}
+	w.mapf = mapf
+	w.reducef = reducef
+	w.reigster()
+	w.run()
+	
 	// uncomment to send the Example RPC to the coordinator.
 	// CallExample()
 
 }
+
+type worker struct 
+{
+	id	int
+	mapf	func(string, string) []KeyValue
+	reducef	func(string, []string) string
+}
+
+func (w *worker) run() {
+	for 
+	{
+		t := w.reqTask()
+		if !t.Alive {
+			log.Fatal("worker get task not alive, exit")
+			return
+		}
+		w.doTask(t);
+	}
+}
+
+func (w *worker) reqTask() Task {
+	args := TaskArgs {}
+	args.WorkerId = w.id
+	reply := TaskReply {}
+	if ok := call("Coordinator.GetTask", &args, &reply); !ok {
+		log.Fatal("get task failed");
+		os.Exit(1)
+	}
+	log.Printf("get task %v", reply.Task)
+	return *reply.Task
+}
+
+func (w *worker) doTask(t Task) {
+	log.Print(" do Task ")
+
+	switch t.Phase {
+	case MapPhase:
+		w.doMapTask(t)
+	case ReducePhase:
+		w.doReduceTask(t)
+	default:
+		panic(fmt.Sprint("unknown phase: %v ", t.Phase))
+	}
+}
+
+func (w *worker) doMapTask(t Task) {
+	contents, err := ioutil.ReadFile(t.FileName)
+	if err != nil {
+		log.Fatal("read file failed: ", err)
+	}
+
+	kvs := w.mapf(t.FileName, string(contents))
+	// two-dimensional slice
+	reduces := make([][]KeyValue, t.NReduce)
+	for _, kv := range kvs {
+		i := ihash(kv.Key) % t.NReduce
+		reduces[i] = append(reduces[i], kv)
+	}
+
+	for i, kvs := range reduces {
+		fileName := reduceName(t.Seq, i)
+		out, err := os.Create(fileName)
+		if err != nil {
+			w.reportTask(t, false, err)
+			return
+		}
+		enc := json.NewEncoder(out)
+		for _, kv := range kvs {
+			// write to file
+			err = enc.Encode(&kv)
+			if err != nil {
+				w.reportTask(t, false, err)
+				return
+			}
+		}
+		if err := out.Close(); err != nil {
+			w.reportTask(t, false, err)
+		}
+	}
+	w.reportTask(t, true, nil)
+}
+
+func (w *worker) doReduceTask(t Task) {
+	// for sort
+	maps := make(map[string][]string)
+	for idx :=0; idx < t.NMaps; idx++ {
+		fileName := reduceName(idx, t.Seq)
+		// open already map file
+		f, err := os.Open(fileName)
+		if err != nil {
+			w.reportTask(t, false, err)
+			return
+		}
+		dec := json.NewDecoder(f)
+		for {
+			var kv KeyValue
+			if err := dec.Decode(&kv); err != nil {
+				break
+			}
+			if _, ok := maps[kv.Key]; !ok {
+				maps[kv.Key] = make([]string,0,100)
+			}
+			maps[kv.Key] = append(maps[kv.Key], kv.Value)
+
+		}
+	}
+	res := make([]string, 0, 100)
+	for k,v := range maps {
+		res = append(res, fmt.Sprintf("%v %v\n",k, w.reducef(k,v)))
+	}
+	// performance issue,foreach to write
+	// fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
+
+	// only write once
+	// chmod 600 (rw-------)
+	if err := ioutil.WriteFile(mergeName(t.Seq), []byte(strings.Join(res, "")), 0600); err != nil {
+		w.reportTask(t, false, err)
+	}
+	w.reportTask(t, true, nil)
+}
+
+func (w *worker) reigster() {
+	args := RegisterArgs {}
+	reply := RegisterReply {}
+	if ok := call("Coordinator.Register", &args, &reply); !ok {
+		log.Fatal("reg failed");
+	}
+	w.id = reply.WorkerId
+}
+
+func (w *worker) reportTask(t Task, done bool, err error) {
+	if err != nil {
+		log.Printf("report task failed: %v", err)
+	}
+	args := ReportTaskArgs {}
+	args.Done = done
+	args.Seq = t.Seq
+	args.Phase = t.Phase
+	args.WorkerId = w.id
+	reply := ReportTaskReply {}
+	if ok := call("Coordinator.ReportTask", &args, &reply); !ok {
+		log.Fatal("report task failed: %v", args);
+	}
+
+}
+
 
 //
 // example function to show how to make an RPC call to the coordinator.
