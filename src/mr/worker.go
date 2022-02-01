@@ -60,7 +60,7 @@ func (w *worker) run() {
 	{
 		t := w.reqTask()
 		if !t.Alive {
-			log.Fatal("worker get task not alive, exit")
+			log.Fatalf("worker get task not alive, exit")
 			return
 		}
 		w.doTask(t);
@@ -71,11 +71,11 @@ func (w *worker) reqTask() Task {
 	args := TaskArgs {}
 	args.WorkerId = w.id
 	reply := TaskReply {}
-	if ok := call("Coordinator.GetTask", &args, &reply); !ok {
-		log.Fatal("get task failed");
+	if ok := call("Coordinator.GetOneTask", &args, &reply); !ok {
+		log.Fatalf("get task failed");
 		os.Exit(1)
 	}
-	log.Printf("get task %v", reply.Task)
+	// log.Printf("get task %v", reply.Task)
 	return *reply.Task
 }
 
@@ -95,7 +95,7 @@ func (w *worker) doTask(t Task) {
 func (w *worker) doMapTask(t Task) {
 	contents, err := ioutil.ReadFile(t.FileName)
 	if err != nil {
-		log.Fatal("read file failed: ", err)
+		log.Fatalf("read file failed: ", err)
 	}
 
 	kvs := w.mapf(t.FileName, string(contents))
@@ -171,8 +171,8 @@ func (w *worker) doReduceTask(t Task) {
 func (w *worker) reigster() {
 	args := RegisterArgs {}
 	reply := RegisterReply {}
-	if ok := call("Coordinator.Register", &args, &reply); !ok {
-		log.Fatal("reg failed");
+	if ok := call("Coordinator.RegWorker", &args, &reply); !ok {
+		log.Fatalf("reg failed");
 	}
 	w.id = reply.WorkerId
 }
@@ -188,7 +188,7 @@ func (w *worker) reportTask(t Task, done bool, err error) {
 	args.WorkerId = w.id
 	reply := ReportTaskReply {}
 	if ok := call("Coordinator.ReportTask", &args, &reply); !ok {
-		log.Fatal("report task failed: %v", args);
+		log.Fatalf("report task failed: %v", args);
 	}
 
 }
@@ -227,7 +227,7 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	sockname := coordinatorSock()
 	c, err := rpc.DialHTTP("unix", sockname)
 	if err != nil {
-		log.Fatal("dialing:", err)
+		log.Fatalf("dialing:", err)
 	}
 	defer c.Close()
 
