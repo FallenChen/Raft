@@ -20,7 +20,7 @@ const (
 
 const (
 	MaxTaskRunTime  = time.Second * 10
-	ScheduleInterval = time.Millisecond * 500
+	ScheduleInterval = time.Millisecond * 1000
 )
 
 type TaskStat struct {
@@ -112,12 +112,13 @@ func (c *Coordinator) schedule(){
 }
 
 func (c *Coordinator) initMapTask() {
+	log.Printf("initMapTask")
 	c.taskPhase = MapPhase
 	c.taskStats = make([]TaskStat, len(c.files))
 }
 // reduces can't start until the last map task is done
 func (c *Coordinator) initReduceTask() {
-	log.Fatalf("initReduceTask")
+	log.Printf("initReduceTask")
 	c.taskPhase = ReducePhase
 	c.taskStats = make([]TaskStat, c.nReduce)
 }
@@ -232,6 +233,6 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c.initMapTask()
 	go c.tickSchedule()
 	c.server()
-	log.Fatalf("coordinator init")
+	log.Printf("coordinator init, files: %v, nReduce: %v", len(files), nReduce)
 	return &c
 }

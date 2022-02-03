@@ -68,6 +68,7 @@ func (w *worker) run() {
 }
 
 func (w *worker) reqTask() Task {
+	log.Printf("reqTask")
 	args := TaskArgs {}
 	args.WorkerId = w.id
 	reply := TaskReply {}
@@ -75,13 +76,12 @@ func (w *worker) reqTask() Task {
 		log.Fatalf("get task failed");
 		os.Exit(1)
 	}
-	// log.Printf("get task %v", reply.Task)
+	log.Printf("get task seq %v", reply.Task.Seq)
 	return *reply.Task
 }
 
 func (w *worker) doTask(t Task) {
-	log.Print(" do Task ")
-
+	log.Printf("doTask")
 	switch t.Phase {
 	case MapPhase:
 		w.doMapTask(t)
@@ -93,6 +93,7 @@ func (w *worker) doTask(t Task) {
 }
 
 func (w *worker) doMapTask(t Task) {
+	log.Printf("doMapTask")
 	contents, err := ioutil.ReadFile(t.FileName)
 	if err != nil {
 		log.Fatalf("read file failed: ", err)
@@ -130,6 +131,7 @@ func (w *worker) doMapTask(t Task) {
 }
 
 func (w *worker) doReduceTask(t Task) {
+	log.Printf("doReduceTask")
 	// for sort
 	maps := make(map[string][]string)
 	for idx :=0; idx < t.NMaps; idx++ {
@@ -169,15 +171,18 @@ func (w *worker) doReduceTask(t Task) {
 }
 
 func (w *worker) reigster() {
+	log.Printf("reigster")
 	args := RegisterArgs {}
 	reply := RegisterReply {}
 	if ok := call("Coordinator.RegWorker", &args, &reply); !ok {
 		log.Fatalf("reg failed");
 	}
 	w.id = reply.WorkerId
+	log.Printf("reg success, worker id: %v", w.id)
 }
 
 func (w *worker) reportTask(t Task, done bool, err error) {
+	log.Printf("reportTask")
 	if err != nil {
 		log.Printf("report task failed: %v", err)
 	}
