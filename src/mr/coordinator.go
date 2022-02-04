@@ -78,33 +78,38 @@ func (c *Coordinator) schedule(){
 		return
 	}
 
-	count := 0
+	allFinish := true
 	for i, stat := range c.taskStats {
 		switch stat.Status {
 		case TaskStatusReady:
+			allFinish = false
 			c.taskCh <- c.getTask(i)
 			c.taskStats[i].Status = TaskStatusInQueue
 		case TaskStatusInQueue:
-
+			allFinish = false
 		case TaskStatusRunning:
+			allFinish = false
 			if time.Now().Sub(stat.StartTime) > MaxTaskRunTime {
 				c.taskStats[i].Status = TaskStatusInQueue
 				c.taskCh <- c.getTask(i)
 			}
 		case TaskStatusDone:
-			count += 1
+			allFinish = true
 		case TaskStaustError:
+			allFinish = false
 			c.taskStats[i].Status = TaskStatusInQueue
 			c.taskCh <- c.getTask(i)
 		default:
 			panic("unknown task status")
 		}
 	}
-	if(count == len(c.taskStats)){
+	if allFinish {
+		log.Printf("all task done")
 		// all map tasks done
 		if c.taskPhase == MapPhase {
 			c.initReduceTask()
 		} else {
+			log.Printf("set done")
 			c.done = true
 		}
 	}

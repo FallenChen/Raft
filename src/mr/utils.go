@@ -20,9 +20,9 @@ type Task struct {
 	Phase		TaskPhase
 	Alive		bool
 }
-
+// intermediate files naming convention
 func reduceName(mapIdx, reduceIdx int) string {
-	return fmt.Sprintf("mr-out-%d-%d", mapIdx, reduceIdx)
+	return fmt.Sprintf("mr-%d-%d", mapIdx, reduceIdx)
 }
 
 func mergeName(reduceIdx int) string {

@@ -8,8 +8,17 @@ import (
 	"log"
 	"net/rpc"
 	"os"
-	"strings"
+	// "strings"
+	"sort"
 )
+
+// for sorting by key.
+type ByKey []KeyValue
+
+// for sorting by key.
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 //
 // Map functions return a slice of KeyValue.
@@ -103,13 +112,17 @@ func (w *worker) doMapTask(t Task) {
 	// two-dimensional slice
 	reduces := make([][]KeyValue, t.NReduce)
 	for _, kv := range kvs {
+		// partitioned into nReduce regions
 		i := ihash(kv.Key) % t.NReduce
 		reduces[i] = append(reduces[i], kv)
 	}
 
+	// create intermediate file
 	for i, kvs := range reduces {
 		fileName := reduceName(t.Seq, i)
-		out, err := os.Create(fileName)
+		// out, err := os.Create(fileName)
+		out, err := os.CreateTemp("","temp-"+fileName)
+		// log.Printf("create file %v", fileName)
 		if err != nil {
 			w.reportTask(t, false, err)
 			return
@@ -123,7 +136,11 @@ func (w *worker) doMapTask(t Task) {
 				return
 			}
 		}
+
 		if err := out.Close(); err != nil {
+			w.reportTask(t, false, err)
+		}
+		if err := os.Rename(out.Name(), fileName); err != nil {
 			w.reportTask(t, false, err)
 		}
 	}
@@ -132,11 +149,13 @@ func (w *worker) doMapTask(t Task) {
 
 func (w *worker) doReduceTask(t Task) {
 	log.Printf("doReduceTask")
+	// log.Fatalf("doReduceTask")
 	// for sort
-	maps := make(map[string][]string)
+	// maps := make(map[string][]string)
+	intermediate := []KeyValue{}
 	for idx :=0; idx < t.NMaps; idx++ {
 		fileName := reduceName(idx, t.Seq)
-		// open already map file
+		// open intermediate map file
 		f, err := os.Open(fileName)
 		if err != nil {
 			w.reportTask(t, false, err)
@@ -148,25 +167,58 @@ func (w *worker) doReduceTask(t Task) {
 			if err := dec.Decode(&kv); err != nil {
 				break
 			}
-			if _, ok := maps[kv.Key]; !ok {
-				maps[kv.Key] = make([]string,0,100)
-			}
-			maps[kv.Key] = append(maps[kv.Key], kv.Value)
+			intermediate = append(intermediate, kv)
+			// if _, ok := maps[kv.Key]; !ok {
+			// 	maps[kv.Key] = make([]string,0,100)
+			// }
+			// maps[kv.Key] = append(maps[kv.Key], kv.Value)
 
 		}
 	}
-	res := make([]string, 0, 100)
-	for k,v := range maps {
-		res = append(res, fmt.Sprintf("%v %v\n",k, w.reducef(k,v)))
+	sort.Sort(ByKey(intermediate))
+
+	oname := mergeName(t.Seq)
+	// ofile, err := os.Create(oname)
+	// ofile, err := os.CreateTemp(oname)
+	// os.Rename()
+	ofile, err := os.CreateTemp("","tmp-"+oname)
+	if err != nil {
+		w.reportTask(t, false, err)
 	}
+	defer ofile.Close()
+	i := 0
+	for i < len(intermediate) {
+		j := i + 1
+		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
+			j++
+		}
+		values := []string{}
+		for k := i; k < j; k++ {
+			values = append(values, intermediate[k].Value)
+		}
+		output := w.reducef(intermediate[i].Key, values)
+
+		// this is the correct format for each line of Reduce output.
+		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
+
+		i = j
+	}
+	if err := os.Rename(ofile.Name(),oname); err != nil {
+		w.reportTask(t, false, err)
+	}
+
+	// res := make([]string, 0, 100)
+	// for k,v := range maps {
+	// 	res = append(res, fmt.Sprintf("%v %v\n",k, w.reducef(k,v)))
+	// }
 	// performance issue,foreach to write
 	// fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
 
 	// only write once
 	// chmod 600 (rw-------)
-	if err := ioutil.WriteFile(mergeName(t.Seq), []byte(strings.Join(res, "")), 0600); err != nil {
-		w.reportTask(t, false, err)
-	}
+	// if err := ioutil.WriteFile(mergeName(t.Seq), []byte(strings.Join(res, "")), 0600); err != nil {
+	// 	w.reportTask(t, false, err)
+	// }
 	w.reportTask(t, true, nil)
 }
 
