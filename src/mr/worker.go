@@ -65,6 +65,7 @@ type worker struct
 }
 
 func (w *worker) run() {
+	log.Printf("run")
 	for 
 	{
 		t := w.reqTask()
@@ -124,7 +125,7 @@ func (w *worker) doMapTask(t Task) {
 		out, err := os.CreateTemp("","temp-"+fileName)
 		// log.Printf("create file %v", fileName)
 		if err != nil {
-			w.reportTask(t, false, err)
+			w.reportTask(t, TaskStaustError, err)
 			return
 		}
 		enc := json.NewEncoder(out)
@@ -132,33 +133,30 @@ func (w *worker) doMapTask(t Task) {
 			// write to file
 			err = enc.Encode(&kv)
 			if err != nil {
-				w.reportTask(t, false, err)
+				w.reportTask(t, TaskStaustError, err)
 				return
 			}
 		}
 
 		if err := out.Close(); err != nil {
-			w.reportTask(t, false, err)
+			w.reportTask(t, TaskStaustError, err)
 		}
 		if err := os.Rename(out.Name(), fileName); err != nil {
-			w.reportTask(t, false, err)
+			w.reportTask(t, TaskStaustError, err)
 		}
 	}
-	w.reportTask(t, true, nil)
+	w.reportTask(t, TaskStatusMapDone, nil)
 }
 
 func (w *worker) doReduceTask(t Task) {
 	log.Printf("doReduceTask")
-	// log.Fatalf("doReduceTask")
-	// for sort
-	// maps := make(map[string][]string)
 	intermediate := []KeyValue{}
 	for idx :=0; idx < t.NMaps; idx++ {
 		fileName := reduceName(idx, t.Seq)
 		// open intermediate map file
 		f, err := os.Open(fileName)
 		if err != nil {
-			w.reportTask(t, false, err)
+			w.reportTask(t, TaskStaustError, err)
 			return
 		}
 		dec := json.NewDecoder(f)
@@ -183,7 +181,7 @@ func (w *worker) doReduceTask(t Task) {
 	// os.Rename()
 	ofile, err := os.CreateTemp("","tmp-"+oname)
 	if err != nil {
-		w.reportTask(t, false, err)
+		w.reportTask(t, TaskStaustError, err)
 	}
 	defer ofile.Close()
 	i := 0
@@ -204,22 +202,10 @@ func (w *worker) doReduceTask(t Task) {
 		i = j
 	}
 	if err := os.Rename(ofile.Name(),oname); err != nil {
-		w.reportTask(t, false, err)
+		w.reportTask(t, TaskStaustError, err)
 	}
 
-	// res := make([]string, 0, 100)
-	// for k,v := range maps {
-	// 	res = append(res, fmt.Sprintf("%v %v\n",k, w.reducef(k,v)))
-	// }
-	// performance issue,foreach to write
-	// fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
-
-	// only write once
-	// chmod 600 (rw-------)
-	// if err := ioutil.WriteFile(mergeName(t.Seq), []byte(strings.Join(res, "")), 0600); err != nil {
-	// 	w.reportTask(t, false, err)
-	// }
-	w.reportTask(t, true, nil)
+	w.reportTask(t, TaskStatusReduceDone, nil)
 }
 
 func (w *worker) reigster() {
@@ -233,7 +219,7 @@ func (w *worker) reigster() {
 	log.Printf("reg success, worker id: %v", w.id)
 }
 
-func (w *worker) reportTask(t Task, done bool, err error) {
+func (w *worker) reportTask(t Task, done int, err error) {
 	log.Printf("reportTask")
 	if err != nil {
 		log.Printf("report task failed: %v", err)

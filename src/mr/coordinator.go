@@ -14,8 +14,9 @@ const (
 	TaskStatusReady = 0
 	TaskStatusInQueue = 1
 	TaskStatusRunning = 2
-	TaskStatusDone = 3
-	TaskStaustError = 4
+	TaskStatusMapDone = 3
+	TaskStatusReduceDone = 4
+	TaskStaustError = 5
 )
 
 const (
@@ -71,6 +72,7 @@ func (c *Coordinator) getTask(taskSeq int) Task {
 }
 
 func (c *Coordinator) schedule(){
+	log.Printf("schedule")
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -78,43 +80,49 @@ func (c *Coordinator) schedule(){
 		return
 	}
 
-	allFinish := true
+	mapFinish := 0
+	reduceFinish := 0
 	for i, stat := range c.taskStats {
 		switch stat.Status {
 		case TaskStatusReady:
-			allFinish = false
 			c.taskCh <- c.getTask(i)
 			c.taskStats[i].Status = TaskStatusInQueue
 		case TaskStatusInQueue:
-			allFinish = false
 		case TaskStatusRunning:
-			allFinish = false
 			if time.Now().Sub(stat.StartTime) > MaxTaskRunTime {
 				c.taskStats[i].Status = TaskStatusInQueue
 				c.taskCh <- c.getTask(i)
 			}
-		case TaskStatusDone:
-			allFinish = true
+		case TaskStatusMapDone:
+			mapFinish += 1
+		case TaskStatusReduceDone:
+			reduceFinish += 1
 		case TaskStaustError:
-			allFinish = false
 			c.taskStats[i].Status = TaskStatusInQueue
 			c.taskCh <- c.getTask(i)
 		default:
 			panic("unknown task status")
 		}
 	}
-	if allFinish {
-		log.Printf("all task done")
-		// all map tasks done
-		if c.taskPhase == MapPhase {
-			c.initReduceTask()
-		} else {
-			log.Printf("set done")
-			c.done = true
-		}
+
+	if mapFinish == len(c.files) {
+		log.Printf("all map task done")
+		c.initReduceTask()
+	}
+	if reduceFinish == c.nReduce {
+
+		log.Printf("all reduce task done")
+		c.done = true
 	}
 
 }
+
+func (c *Coordinator) isDone() bool{
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	return c.done
+}
+
 
 func (c *Coordinator) initMapTask() {
 	log.Printf("initMapTask")
@@ -129,6 +137,7 @@ func (c *Coordinator) initReduceTask() {
 }
 
 func (c *Coordinator) RegWorker(args *RegisterArgs, reply *RegisterReply) error {
+	log.Printf("RegWorker")
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.workerSeq += 1
@@ -143,7 +152,7 @@ func (c *Coordinator) doGetOneTask(args *TaskArgs, task *Task){
 	if task.Phase != c.taskPhase {
 		panic("req Task phase not match")
 	}
-	c.taskStats[task.Seq].Status = 1
+	c.taskStats[task.Seq].Status = TaskStatusRunning
 	c.taskStats[task.Seq].WorkerId = args.WorkerId
 	c.taskStats[task.Seq].StartTime = time.Now()
 
@@ -156,7 +165,6 @@ func (c *Coordinator) GetOneTask(args *TaskArgs, reply *TaskReply) error {
 	if task.Alive {
 		c.doGetOneTask(args,&task);
 	}
-	// log.Fatalf("get task failed: %v, taskPhase: %v", task, c.taskPhase);
 	return nil;
 }
 
@@ -164,16 +172,17 @@ func (c *Coordinator) ReportTask(args *ReportTaskArgs, reply *ReportTaskReply) e
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	// log.Fatalf("ReportTask: %v, %v, %v", args.Done, args.Seq, args.Phase)
-
 	if c.taskPhase != args.Phase  || args.WorkerId != c.taskStats[args.Seq].WorkerId {
 		return nil
 	}
 
-	if args.Done {
-		c.taskStats[args.Seq].Status = TaskStatusDone
-	} else {
-		c.taskStats[args.Seq].Status = TaskStaustError
+	switch args.Done {
+		case TaskStatusMapDone:
+			c.taskStats[args.Seq].Status = TaskStatusMapDone
+		case TaskStatusReduceDone:
+			c.taskStats[args.Seq].Status = TaskStatusReduceDone
+		case TaskStaustError:
+			c.taskStats[args.Seq].Status = TaskStaustError
 	}
 
 	go c.schedule()
@@ -211,8 +220,7 @@ func (c *Coordinator) Done() bool {
 
 func (c *Coordinator) tickSchedule(){
 
-	// schedule periodically
-	for !c.done {
+	for !c.isDone() {
 		go c.schedule()
 		time.Sleep(ScheduleInterval)
 	}
@@ -235,9 +243,11 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	} else {
 		c.taskCh = make(chan Task, len(files))
 	}
+	// go c.initDone()
 	c.initMapTask()
 	go c.tickSchedule()
 	c.server()
 	log.Printf("coordinator init, files: %v, nReduce: %v", len(files), nReduce)
 	return &c
 }
+

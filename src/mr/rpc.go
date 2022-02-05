@@ -34,7 +34,7 @@ type TaskReply struct {
 }
 
 type ReportTaskArgs struct {
-	Done		bool
+	Done		int
 	Seq		int
 	Phase		TaskPhase
 	WorkerId 	int
