@@ -72,7 +72,7 @@ func (c *Coordinator) getTask(taskSeq int) Task {
 }
 
 func (c *Coordinator) schedule(){
-	log.Printf("schedule")
+	// log.Printf("schedule")
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
@@ -125,19 +125,19 @@ func (c *Coordinator) isDone() bool{
 
 
 func (c *Coordinator) initMapTask() {
-	log.Printf("initMapTask")
+	// log.Printf("initMapTask")
 	c.taskPhase = MapPhase
 	c.taskStats = make([]TaskStat, len(c.files))
 }
 // reduces can't start until the last map task is done
 func (c *Coordinator) initReduceTask() {
-	log.Printf("initReduceTask")
+	// log.Printf("initReduceTask")
 	c.taskPhase = ReducePhase
 	c.taskStats = make([]TaskStat, c.nReduce)
 }
 
 func (c *Coordinator) RegWorker(args *RegisterArgs, reply *RegisterReply) error {
-	log.Printf("RegWorker")
+	// log.Printf("RegWorker")
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	c.workerSeq += 1

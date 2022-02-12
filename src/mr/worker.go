@@ -65,7 +65,7 @@ type worker struct
 }
 
 func (w *worker) run() {
-	log.Printf("run")
+	// log.Printf("run")
 	for 
 	{
 		t := w.reqTask()
@@ -78,7 +78,7 @@ func (w *worker) run() {
 }
 
 func (w *worker) reqTask() Task {
-	log.Printf("reqTask")
+	// log.Printf("reqTask")
 	args := TaskArgs {}
 	args.WorkerId = w.id
 	reply := TaskReply {}
@@ -86,12 +86,12 @@ func (w *worker) reqTask() Task {
 		log.Fatalf("get task failed");
 		os.Exit(1)
 	}
-	log.Printf("get task seq %v", reply.Task.Seq)
+	// log.Printf("get task seq %v", reply.Task.Seq)
 	return *reply.Task
 }
 
 func (w *worker) doTask(t Task) {
-	log.Printf("doTask")
+	// log.Printf("doTask")
 	switch t.Phase {
 	case MapPhase:
 		w.doMapTask(t)
@@ -103,7 +103,7 @@ func (w *worker) doTask(t Task) {
 }
 
 func (w *worker) doMapTask(t Task) {
-	log.Printf("doMapTask")
+	// log.Printf("doMapTask")
 	contents, err := ioutil.ReadFile(t.FileName)
 	if err != nil {
 		log.Fatalf("read file failed: ", err)
@@ -121,8 +121,8 @@ func (w *worker) doMapTask(t Task) {
 	// create intermediate file
 	for i, kvs := range reduces {
 		fileName := reduceName(t.Seq, i)
-		// out, err := os.Create(fileName)
-		out, err := os.CreateTemp("","temp-"+fileName)
+		out, err := os.Create(fileName)
+		// out, err := os.CreateTemp("","temp-"+fileName)
 		// log.Printf("create file %v", fileName)
 		if err != nil {
 			w.reportTask(t, TaskStaustError, err)
@@ -141,15 +141,15 @@ func (w *worker) doMapTask(t Task) {
 		if err := out.Close(); err != nil {
 			w.reportTask(t, TaskStaustError, err)
 		}
-		if err := os.Rename(out.Name(), fileName); err != nil {
-			w.reportTask(t, TaskStaustError, err)
-		}
+		// if err := os.Rename(out.Name(), fileName); err != nil {
+		// 	w.reportTask(t, TaskStaustError, err)
+		// }
 	}
 	w.reportTask(t, TaskStatusMapDone, nil)
 }
 
 func (w *worker) doReduceTask(t Task) {
-	log.Printf("doReduceTask")
+	// log.Printf("doReduceTask")
 	intermediate := []KeyValue{}
 	for idx :=0; idx < t.NMaps; idx++ {
 		fileName := reduceName(idx, t.Seq)
@@ -176,10 +176,10 @@ func (w *worker) doReduceTask(t Task) {
 	sort.Sort(ByKey(intermediate))
 
 	oname := mergeName(t.Seq)
-	// ofile, err := os.Create(oname)
+	ofile, err := os.Create(oname)
 	// ofile, err := os.CreateTemp(oname)
 	// os.Rename()
-	ofile, err := os.CreateTemp("","tmp-"+oname)
+	// ofile, err := os.CreateTemp("","tmp-"+oname)
 	if err != nil {
 		w.reportTask(t, TaskStaustError, err)
 	}
@@ -201,26 +201,26 @@ func (w *worker) doReduceTask(t Task) {
 
 		i = j
 	}
-	if err := os.Rename(ofile.Name(),oname); err != nil {
-		w.reportTask(t, TaskStaustError, err)
-	}
+	// if err := os.Rename(ofile.Name(),oname); err != nil {
+	// 	w.reportTask(t, TaskStaustError, err)
+	// }
 
 	w.reportTask(t, TaskStatusReduceDone, nil)
 }
 
 func (w *worker) reigster() {
-	log.Printf("reigster")
+	// log.Printf("reigster")
 	args := RegisterArgs {}
 	reply := RegisterReply {}
 	if ok := call("Coordinator.RegWorker", &args, &reply); !ok {
 		log.Fatalf("reg failed");
 	}
 	w.id = reply.WorkerId
-	log.Printf("reg success, worker id: %v", w.id)
+	// log.Printf("reg success, worker id: %v", w.id)
 }
 
 func (w *worker) reportTask(t Task, done int, err error) {
-	log.Printf("reportTask")
+	// log.Printf("reportTask")
 	if err != nil {
 		log.Printf("report task failed: %v", err)
 	}
