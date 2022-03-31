@@ -79,6 +79,15 @@ type Raft struct {
 	// Persistent state on all servers:
 	currentTerm	int
 	votedFor	int
+	log 		Log
+
+	// Volatile state on all servers:
+	commitIndex int
+	lastApplied int
+	
+	// Volatile state on leaders:
+	nextIndex []int
+	matchIndex []int	
 
 	applyCh   chan ApplyMsg
 }
@@ -227,14 +236,35 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
-	index := -1
-	term := -1
-	isLeader := true
+
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	if rf.state != Leader {
+		return -1, rf.currentTerm, false
+	}
+
+	// the index that the command will appear at
+	// if it's ever committed
+	index := rf.log.lastLog().Index + 1
+	term := rf.currentTerm
+
+	log := Entry{
+		Command: command,
+		Index:   index,
+		Term:    term,
+	}
+
+	rf.log.append(log)
+
+	DPrintf("[%v]: term %v Start %v", rf.me, term, log)
+
+	// wants to start agreement on the next command to be appended to Raft's log
+	rf.appendEntries(false)
 
 	// Your code here (2B).
 
 
-	return index, term, isLeader
+	return index, term, true
 }
 
 //
@@ -269,8 +299,7 @@ func (rf *Raft) ticker() {
 		time.Sleep(rf.heartBeat)
 		rf.mu.Lock()
 		if rf.state == Leader {
-			rf.mu.Unlock()
-			continue
+			rf.appendEntries(true)
 		}
 
 		if time.Now().After(rf.electionTime) {
@@ -306,6 +335,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.votedFor = -1
 	rf.heartBeat = 50 * time.Millisecond
 	rf.resetElectionTimer()
+
+	rf.log = makeEmptyLog()
 
 	rf.applyCh = applyCh
 
