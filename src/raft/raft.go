@@ -18,14 +18,14 @@ package raft
 //
 
 import (
-//	"bytes"
+	//	"bytes"
 	"sync"
 	"sync/atomic"
+	"time"
 
-//	"6.824/labgob"
+	//	"6.824/labgob"
 	"6.824/labrpc"
 )
-
 
 //
 // as each Raft peer becomes aware that successive log entries are
@@ -50,6 +50,14 @@ type ApplyMsg struct {
 	SnapshotIndex int
 }
 
+type PeerState string
+
+const (
+	Follower PeerState = "Follower"
+	Candidate PeerState = "Candidate"
+	Leader PeerState = "Leader"
+)
+
 //
 // A Go object implementing a single Raft peer.
 //
@@ -63,21 +71,27 @@ type Raft struct {
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
+
 	state	    PeerState
+	heartBeat     time.Duration
+	electionTime  time.Time
+
+	// Persistent state on all servers:
 	currentTerm	int
 	votedFor	int
 
+	applyCh   chan ApplyMsg
 }
 
 // return currentTerm and whether this server
 // believes it is the leader.
-func (rf *Raft) GetState() (int, bool) {
+// func (rf *Raft) GetState() (int, bool) {
 
-	var term int
-	var isleader bool
-	// Your code here (2A).
-	return term, isleader
-}
+// 	var term int
+// 	var isleader bool
+// 	// Your code here (2A).
+// 	return term, isleader
+// }
 
 //
 // save Raft's persistent state to stable storage,
@@ -144,24 +158,24 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // example RequestVote RPC arguments structure.
 // field names must start with capital letters!
 //
-type RequestVoteArgs struct {
+// type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
-}
+// }
 
 //
 // example RequestVote RPC reply structure.
 // field names must start with capital letters!
 //
-type RequestVoteReply struct {
+// type RequestVoteReply struct {
 	// Your data here (2A).
-}
+// }
 
 //
 // example RequestVote RPC handler.
 //
-func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+// func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (2A, 2B).
-}
+// }
 
 //
 // example code to send a RequestVote RPC to a server.
@@ -192,10 +206,10 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 // that the caller passes the address of the reply struct with &, not
 // the struct itself.
 //
-func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
-	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
-	return ok
-}
+// func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
+	// ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+	// return ok
+// }
 
 
 //
@@ -252,7 +266,19 @@ func (rf *Raft) ticker() {
 		// Your code here to check if a leader election should
 		// be started and to randomize sleeping time using
 		// time.Sleep().
+		time.Sleep(rf.heartBeat)
+		rf.mu.Lock()
+		if rf.state == Leader {
+			rf.mu.Unlock()
+			continue
+		}
 
+		if time.Now().After(rf.electionTime) {
+			rf.leaderElection()
+		}
+		// deffer is not allow,
+		// otherwise the lock will never release
+		rf.mu.Unlock()
 	}
 }
 
@@ -275,6 +301,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here (2A, 2B, 2C).
+	rf.state = Follower
+	rf.currentTerm = 0
+	rf.votedFor = -1
+	rf.heartBeat = 50 * time.Millisecond
+	rf.resetElectionTimer()
+
+	rf.applyCh = applyCh
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
