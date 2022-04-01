@@ -38,12 +38,15 @@ func (rf *Raft) leaderElection() {
 
 	term := rf.currentTerm
 	voteCounter := 1
+	lastLog := rf.log.lastLog()
 
 	DPrintf("[%v]: start leader election, term %d\n", rf.me, rf.currentTerm)
 
 	args := RequestVoteArgs{
 		Term:         term,
 		CandidateId:  rf.me,
+		LastLogIndex: lastLog.Index,
+		LastLogTerm: lastLog.Term,
 	}
 
 	var becomLeader sync.Once

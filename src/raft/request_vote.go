@@ -6,6 +6,8 @@ type RequestVoteArgs struct {
 	// Your data here (2A, 2B).
 	Term int
 	CandidateId int
+	LastLogIndex int
+	LastLogTerm int
 }
 
 type RequestVoteReply struct {
@@ -19,17 +21,32 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
+	// rules for servers
+	// all servers 2
 	if args.Term > rf.currentTerm {
 		rf.setNewTerm(args.Term)
 	}
 
+	// request vote rpc receiver 1
 	if args.Term < rf.currentTerm {
 		reply.Term = rf.currentTerm
 		reply.VoteGranted = false
 		return
 	}
 
-	if rf.votedFor == -1 || rf.votedFor == args.CandidateId {
+	// request vote rpc receiver 2
+	// Raft determines which of two logs is more up-to-date by comparing 
+	// the index and term of the last entries in the logs. 
+	// If the logs have last entries with different terms, 
+	// then the log with the later term is more up-to-date. 
+	// If the logs end with the same term, 
+	// then whichever log is longer is more up-to-date.
+
+	myLastLog := rf.log.lastLog()
+	upToDate := args.LastLogTerm > myLastLog.Term ||
+			(args.LastLogTerm == myLastLog.Term && args.LastLogIndex >= myLastLog.Index)
+
+	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && upToDate {
 		reply.VoteGranted = true
 		rf.votedFor = args.CandidateId
 		rf.resetElectionTimer()
@@ -86,7 +103,14 @@ func (rf *Raft) candidateRequestVote(serverId int, args *RequestVoteArgs, voteCo
 			becomeLeader.Do(func ()  {
 				DPrintf("[%d]: 当前term %d 结束\n", rf.me, rf.currentTerm)
 				rf.state = Leader
+				lastLogIndex := rf.log.lastLog().Index
 
+				for i, _ := range rf.peers{
+					rf.nextIndex[i] = lastLogIndex + 1
+					rf.matchIndex[i] = 0
+				}
+
+				rf.appendEntries(true)
 			})
 		}
 	}

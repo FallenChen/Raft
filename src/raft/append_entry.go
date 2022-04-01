@@ -39,7 +39,7 @@ func (rf *Raft) appendEntries(heartbeat bool) {
 
 			// for heartbeat
 			// empty entries
-			if lastLog.Index < nextIndex {
+			if lastLog.Index + 1 < nextIndex {
 				nextIndex = lastLog.Index 
 			}
 
@@ -91,6 +91,7 @@ func (rf *Raft) leaderSendEntries(serverId int, args *AppendEntriesArgs){
 			// more up-to-date
 			rf.nextIndex[serverId] = max(next, rf.nextIndex[serverId])
 			rf.matchIndex[serverId] = max(match, rf.matchIndex[serverId])
+			DPrintf("[%v]: %v append success next %v match %v", rf.me, serverId, rf.nextIndex[serverId], rf.matchIndex[serverId])
 
 		}else  if rf.nextIndex[serverId] > 1 {
 			rf.nextIndex[serverId]--
@@ -104,7 +105,10 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-
+	DPrintf("[%d]: (term %d) follower 收到 [%v] AppendEntries %v, prevIndex %v, prevTerm %v", rf.me, rf.currentTerm, args.LeaderId, args.Entries, args.PrevLogIndex, args.PrevLogTerm)
+	
+	// rules for servers
+	// all servers 2
 	reply.Success = false
 	reply.Term = rf.currentTerm
 
@@ -113,6 +117,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
+	// append entries rpc 1
 	if args.Term < rf.currentTerm{
 		return
 	}
@@ -144,6 +149,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// append entries rpc 5
 	if args.LeaderCommit > rf.commitIndex {
 		rf.commitIndex = min(args.LeaderCommit, rf.log.lastLog().Index)
+		rf.apply()
 	}
 
 	reply.Success = true
@@ -171,6 +177,7 @@ func (rf *Raft) leaderCommitRule() {
 			if counter > len(rf.peers)/2 {
 				rf.commitIndex = n
 				DPrintf("[%v] leader尝试提交 commitIndex: %v", rf.me, rf.commitIndex)
+				rf.apply()
 				break
 			}
 		}

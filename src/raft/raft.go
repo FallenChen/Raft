@@ -90,6 +90,7 @@ type Raft struct {
 	matchIndex []int	
 
 	applyCh   chan ApplyMsg
+	applyCond *sync.Cond
 }
 
 // return currentTerm and whether this server
@@ -337,8 +338,14 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.resetElectionTimer()
 
 	rf.log = makeEmptyLog()
+	rf.log.append(Entry{-1, 0, 0})
+	rf.commitIndex = 0
+	rf.lastApplied = 0
+	rf.nextIndex = make([]int, len(rf.peers))
+	rf.matchIndex = make([]int, len(rf.peers))
 
 	rf.applyCh = applyCh
+	rf.applyCond = sync.NewCond(&rf.mu)
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
@@ -346,6 +353,37 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	// start ticker goroutine to start elections
 	go rf.ticker()
 
+	go rf.applier()
 
 	return rf
+}
+
+// when commitIndex changes
+func (rf *Raft) apply(){
+	rf.applyCond.Broadcast()
+	DPrintf("[%v]: rf.applyCond.Broadcast()", rf.me)
+}
+
+// update lastApplied
+func (rf *Raft) applier() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	for !rf.killed(){
+		// all servers rule 1
+		// "apply log[lastApplied] to state machine" means lastApplied must in log[]
+		if rf.commitIndex > rf.lastApplied && rf.log.lastLog().Index > rf.lastApplied {
+			rf.lastApplied++
+			applyMsg := ApplyMsg{
+				CommandValid:  true,
+				Command:       rf.log.at(rf.lastApplied).Command,
+				CommandIndex:  rf.lastApplied,
+			}
+			rf.mu.Unlock()
+			rf.applyCh <- applyMsg
+			rf.mu.Lock()
+		}else {
+			rf.applyCond.Wait()
+		}
+	}
 }
