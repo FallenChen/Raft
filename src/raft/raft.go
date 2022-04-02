@@ -18,6 +18,9 @@ package raft
 //
 
 import (
+	"fmt"
+	"strings"
+
 	//	"bytes"
 	"sync"
 	"sync/atomic"
@@ -53,9 +56,9 @@ type ApplyMsg struct {
 type PeerState string
 
 const (
-	Follower PeerState = "Follower"
+	Follower  PeerState = "Follower"
 	Candidate PeerState = "Candidate"
-	Leader PeerState = "Leader"
+	Leader    PeerState = "Leader"
 )
 
 //
@@ -72,22 +75,22 @@ type Raft struct {
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
 
-	state	    PeerState
-	heartBeat     time.Duration
-	electionTime  time.Time
+	state        PeerState
+	heartBeat    time.Duration
+	electionTime time.Time
 
 	// Persistent state on all servers:
-	currentTerm	int
-	votedFor	int
-	log 		Log
+	currentTerm int
+	votedFor    int
+	log         Log
 
 	// Volatile state on all servers:
 	commitIndex int
 	lastApplied int
-	
+
 	// Volatile state on leaders:
-	nextIndex []int
-	matchIndex []int	
+	nextIndex  []int
+	matchIndex []int
 
 	applyCh   chan ApplyMsg
 	applyCond *sync.Cond
@@ -119,7 +122,6 @@ func (rf *Raft) persist() {
 	// rf.persister.SaveRaftState(data)
 }
 
-
 //
 // restore previously persisted state.
 //
@@ -142,7 +144,6 @@ func (rf *Raft) readPersist(data []byte) {
 	// }
 }
 
-
 //
 // A service wants to switch to snapshot.  Only do so if Raft hasn't
 // have more recent info since it communicate the snapshot on applyCh.
@@ -163,13 +164,12 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 
 }
 
-
 //
 // example RequestVote RPC arguments structure.
 // field names must start with capital letters!
 //
 // type RequestVoteArgs struct {
-	// Your data here (2A, 2B).
+// Your data here (2A, 2B).
 // }
 
 //
@@ -177,14 +177,14 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // field names must start with capital letters!
 //
 // type RequestVoteReply struct {
-	// Your data here (2A).
+// Your data here (2A).
 // }
 
 //
 // example RequestVote RPC handler.
 //
 // func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	// Your code here (2A, 2B).
+// Your code here (2A, 2B).
 // }
 
 //
@@ -217,10 +217,9 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // the struct itself.
 //
 // func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
-	// ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
-	// return ok
+// ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+// return ok
 // }
-
 
 //
 // the service using Raft (e.g. a k/v server) wants to start
@@ -263,7 +262,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	rf.appendEntries(false)
 
 	// Your code here (2B).
-
 
 	return index, term, true
 }
@@ -359,7 +357,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 }
 
 // when commitIndex changes
-func (rf *Raft) apply(){
+func (rf *Raft) apply() {
 	rf.applyCond.Broadcast()
 	DPrintf("[%v]: rf.applyCond.Broadcast()", rf.me)
 }
@@ -369,21 +367,31 @@ func (rf *Raft) applier() {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
-	for !rf.killed(){
+	for !rf.killed() {
 		// all servers rule 1
 		// "apply log[lastApplied] to state machine" means lastApplied must in log[]
 		if rf.commitIndex > rf.lastApplied && rf.log.lastLog().Index > rf.lastApplied {
 			rf.lastApplied++
 			applyMsg := ApplyMsg{
-				CommandValid:  true,
-				Command:       rf.log.at(rf.lastApplied).Command,
-				CommandIndex:  rf.lastApplied,
+				CommandValid: true,
+				Command:      rf.log.at(rf.lastApplied).Command,
+				CommandIndex: rf.lastApplied,
 			}
+			DPrintVerbose("[%v]: COMMIT %d: %v", rf.me, rf.lastApplied, rf.commits())
 			rf.mu.Unlock()
 			rf.applyCh <- applyMsg
 			rf.mu.Lock()
-		}else {
+		} else {
 			rf.applyCond.Wait()
+			DPrintf("[%v]: rf.applyCond.Wait()", rf.me)
 		}
 	}
+}
+
+func (rf *Raft) commits() string {
+	nums := []string{}
+	for i := 0; i <= rf.lastApplied; i++ {
+		nums = append(nums, fmt.Sprintf("%4d", rf.log.at(i).Command))
+	}
+	return fmt.Sprint(strings.Join(nums, "|"))
 }

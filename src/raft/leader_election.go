@@ -16,7 +16,7 @@ func (rf *Raft) GetState() (int, bool) {
 
 func (rf *Raft) resetElectionTimer() {
 	t := time.Now()
-	electionTimeout := time.Duration(150 + rand.Intn(150)) * time.Millisecond
+	electionTimeout := time.Duration(150+rand.Intn(150)) * time.Millisecond
 	rf.electionTime = t.Add(electionTimeout)
 }
 
@@ -25,7 +25,7 @@ func (rf *Raft) setNewTerm(term int) {
 		rf.state = Follower
 		rf.currentTerm = term
 		rf.votedFor = -1
-
+		DPrintf("[%d]: set term %v\n", rf.me, rf.currentTerm)
 	}
 }
 
@@ -46,14 +46,14 @@ func (rf *Raft) leaderElection() {
 		Term:         term,
 		CandidateId:  rf.me,
 		LastLogIndex: lastLog.Index,
-		LastLogTerm: lastLog.Term,
+		LastLogTerm:  lastLog.Term,
 	}
 
 	var becomLeader sync.Once
 
-	for serverId,_ := range rf.peers {
+	for serverId, _ := range rf.peers {
 		if serverId != rf.me {
-			go rf.candidateRequestVote(serverId, &args, 
+			go rf.candidateRequestVote(serverId, &args,
 				&voteCounter, &becomLeader)
 		}
 	}
