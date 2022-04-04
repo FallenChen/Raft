@@ -1,5 +1,10 @@
 package raft
 
+import (
+	"fmt"
+	"strings"
+)
+
 
 type Log struct {
 	Entries []Entry
@@ -45,4 +50,12 @@ func (l *Log) truncate(idx int) {
 
 func (l *Log) slice(idx int) []Entry {
 	return l.Entries[idx:]
+}
+
+func (l *Log) String() string {
+	nums := []string{}
+	for _, entry := range l.Entries {
+		nums = append(nums,  fmt.Sprintf("%4d", entry.Term))
+	}
+	return fmt.Sprint(strings.Join(nums, "|"))
 }

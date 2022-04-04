@@ -49,6 +49,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	if (rf.votedFor == -1 || rf.votedFor == args.CandidateId) && upToDate {
 		reply.VoteGranted = true
 		rf.votedFor = args.CandidateId
+		rf.persist()
 		rf.resetElectionTimer()
 		DPrintf("[%v]: term %v vote %v", rf.me, rf.currentTerm, rf.votedFor)
 	} else {
