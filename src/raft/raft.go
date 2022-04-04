@@ -236,6 +236,7 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	DPrintf("[%v]: Start 收到 command %v", rf.me, command)
 
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
@@ -329,13 +330,13 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here (2A, 2B, 2C).
-	rf.state = Follower
-	rf.currentTerm = 0
-	rf.votedFor = -1
+	DPrintf("[%d]: initialization\n", me)
+	rf.setNewTerm(0)
 	rf.heartBeat = 50 * time.Millisecond
 	rf.resetElectionTimer()
 
 	rf.log = makeEmptyLog()
+	// start from -1
 	rf.log.append(Entry{-1, 0, 0})
 	rf.commitIndex = 0
 	rf.lastApplied = 0
@@ -370,7 +371,7 @@ func (rf *Raft) applier() {
 	for !rf.killed() {
 		// all servers rule 1
 		// "apply log[lastApplied] to state machine" means lastApplied must in log[]
-		if rf.commitIndex > rf.lastApplied && rf.log.lastLog().Index > rf.lastApplied {
+		if rf.commitIndex > rf.lastApplied  {
 			rf.lastApplied++
 			applyMsg := ApplyMsg{
 				CommandValid: true,

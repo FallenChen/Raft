@@ -109,7 +109,6 @@ func (rf *Raft) candidateRequestVote(serverId int, args *RequestVoteArgs, voteCo
 					rf.nextIndex[i] = lastLogIndex + 1
 					rf.matchIndex[i] = 0
 				}
-
 				rf.appendEntries(true)
 			})
 		}

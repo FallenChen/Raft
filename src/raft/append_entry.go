@@ -30,16 +30,6 @@ func (rf *Raft) appendEntries(heartbeat bool) {
 
 			nextIndex := rf.nextIndex[serverId]
 
-			// fault injection ???
-			if nextIndex <= 0 {
-				nextIndex = 1
-			}
-
-			// for heartbeat
-			// empty entries
-			if lastLog.Index+1 < nextIndex {
-				nextIndex = lastLog.Index
-			}
 
 			prevLog := rf.log.at(nextIndex - 1)
 
@@ -51,6 +41,7 @@ func (rf *Raft) appendEntries(heartbeat bool) {
 				Entries:      make([]Entry, lastLog.Index-nextIndex+1), // init
 				LeaderCommit: rf.commitIndex,
 			}
+			// https://stackoverflow.com/questions/38923237/goroutines-sharing-slices-trying-to-understand-a-data-race
 			copy(args.Entries, rf.log.slice(nextIndex))
 			go rf.leaderSendEntries(serverId, &args)
 		}
@@ -86,8 +77,8 @@ func (rf *Raft) leaderSendEntries(serverId int, args *AppendEntriesArgs) {
 			next := match + 1
 			// if the logs end with the same term , then whichever log is longer is
 			// more up-to-date
-			rf.nextIndex[serverId] = max(next, rf.nextIndex[serverId])
-			rf.matchIndex[serverId] = max(match, rf.matchIndex[serverId])
+			rf.nextIndex[serverId] = next
+			rf.matchIndex[serverId] = match
 			DPrintf("[%v]: %v append success next %v match %v", rf.me, serverId, rf.nextIndex[serverId], rf.matchIndex[serverId])
 
 		} else if rf.nextIndex[serverId] > 1 {
@@ -127,17 +118,19 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	// append entries rpc 2
-	if rf.log.lastLog().Index < args.PrevLogIndex {
+	if rf.log.lastLog().Index < args.PrevLogIndex || rf.log.at(args.PrevLogIndex).Term != args.PrevLogTerm {
 		return
 	}
 
+	// append entries rpc 3
+	if args.PrevLogIndex + 1 < rf.log.len() && rf.log.at(args.PrevLogIndex + 1).Term != args.Term {
+		rf.log.truncate(args.PrevLogIndex + 1)
+	}	
+
 	for idx, entry := range args.Entries {
-		// append entries rpc 3
-		if entry.Index <= rf.log.lastLog().Index && rf.log.at(entry.Index).Term != entry.Term {
-			rf.log.truncate(entry.Index)
-		}
+
 		// append entries rpc 4
-		if entry.Index > rf.log.lastLog().Index {
+		if entry.Index >= rf.log.len() || rf.log.at(entry.Index).Term != entry.Term {
 			rf.log.append(args.Entries[idx:]...)
 			DPrintf("[%d]: follower append [%v]", rf.me, args.Entries[idx:])
 			break
@@ -160,6 +153,7 @@ func (rf *Raft) leaderCommitRule() {
 		return
 	}
 
+	N := rf.commitIndex
 	for n := rf.commitIndex + 1; n <= rf.log.lastLog().Index; n++ {
 		if rf.log.at(n).Term != rf.currentTerm {
 			continue
@@ -173,12 +167,18 @@ func (rf *Raft) leaderCommitRule() {
 				counter++
 			}
 			if counter > len(rf.peers)/2 {
-				rf.commitIndex = n
-				DPrintf("[%v] leader尝试提交 commitIndex: %v", rf.me, rf.commitIndex)
-				rf.apply()
+				N = n
 				break
 			}
 		}
 
 	}
+
+	if N == rf.commitIndex {
+		return
+	}
+
+	rf.commitIndex = N
+	DPrintf("[%v] leader尝试提交 commitIndex: %v", rf.me, rf.commitIndex)
+	rf.apply()
 }
