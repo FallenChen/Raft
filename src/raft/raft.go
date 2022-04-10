@@ -382,8 +382,13 @@ func (rf *Raft) applier() {
 
 	for !rf.killed() {
 		// all servers rule 1
-		// "apply log[lastApplied] to state machine" means lastApplied must in log[]
-		if rf.commitIndex > rf.lastApplied  {
+
+		// For example, if you check commitIndex at the same time as sending out AppendEntries to peers, 
+		// you may have to wait until the next entry is appended to the log 
+		// before applying the entry you just sent out and got acknowledged.
+
+		// As mentioned above, make sure lastApplied  in the logs
+		if rf.commitIndex > rf.lastApplied && rf.log.lastLog().Index > rf.lastApplied {
 			rf.lastApplied++
 			applyMsg := ApplyMsg{
 				CommandValid: true,

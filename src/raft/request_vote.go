@@ -50,6 +50,7 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 		reply.VoteGranted = true
 		rf.votedFor = args.CandidateId
 		rf.persist()
+		// you grant a vote to another peer
 		rf.resetElectionTimer()
 		DPrintf("[%v]: term %v vote %v", rf.me, rf.currentTerm, rf.votedFor)
 	} else {

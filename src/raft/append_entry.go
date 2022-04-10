@@ -17,7 +17,7 @@ type AppendEntriesReply struct {
 	XIndex   int
 	XLen     int
 }
-
+// leader
 func (rf *Raft) appendEntries(heartbeat bool) {
 	lastLog := rf.log.lastLog()
 	for serverId, _ := range rf.peers {
@@ -95,10 +95,11 @@ func (rf *Raft) leaderSendEntries(serverId int, args *AppendEntriesArgs) {
 			DPrintf("[%v]: %v append success next %v match %v", rf.me, serverId, rf.nextIndex[serverId], rf.matchIndex[serverId])
 
 		} else if reply.Conflict {
+			// leader has XTerm,not Term
 			if reply.XTerm == -1 {
 				rf.nextIndex[serverId] = reply.XLen
 			} else {
-				lastLogIndexTerm := rf.findLastLogIndexTerm(reply.Term)
+				lastLogIndexTerm := rf.findLastLogIndexTerm(reply.XTerm)
 				if lastLogIndexTerm > 0 {
 					rf.nextIndex[serverId] = lastLogIndexTerm
 				} else {
@@ -115,7 +116,7 @@ func (rf *Raft) leaderSendEntries(serverId int, args *AppendEntriesArgs) {
 }
 
 func (rf *Raft) findLastLogIndexTerm(x int) int {
-	for i:= rf.log.lastLog().Index; i>0; i++ {
+	for i:= rf.log.lastLog().Index; i>0; i-- {
 		term := rf.log.at(i).Term
 
 		if term == x {
@@ -127,6 +128,7 @@ func (rf *Raft) findLastLogIndexTerm(x int) int {
 	return -1 
 }
 
+// receive from leader
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 
 	rf.mu.Lock()
@@ -147,7 +149,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if args.Term < rf.currentTerm {
 		return
 	}
-
+	// get an AppendEntries RPC from current leader
 	rf.resetElectionTimer()
 
 	// candidate rule 3
@@ -183,15 +185,23 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	// append entries rpc 3
-	if args.PrevLogIndex + 1 < rf.log.len() && rf.log.at(args.PrevLogIndex + 1).Term != args.Term {
-		rf.log.truncate(args.PrevLogIndex + 1)
-		rf.persist()
-	}	
+	// if args.PrevLogIndex + 1 < rf.log.len() && rf.log.at(args.PrevLogIndex + 1).Term != args.Term {
+	// 	rf.log.truncate(args.PrevLogIndex + 1)
+	// 	rf.persist()
+	// }	
 
 	for idx, entry := range args.Entries {
 
+		// append entries rpc 3 
+		// because leader'log entries and current server' log entries may not the same sequence
+		if entry.Index <= rf.log.lastLog().Index && rf.log.at(entry.Index).Term != entry.Term {
+			rf.log.truncate(entry.Index)
+			rf.persist()
+		}
+
 		// append entries rpc 4
-		if entry.Index >= rf.log.len() || rf.log.at(entry.Index).Term != entry.Term {
+		// lastLog index not len
+		if entry.Index > rf.log.lastLog().Index {
 			rf.log.append(args.Entries[idx:]...)
 			rf.persist()
 			DPrintf("[%d]: follower append [%v]", rf.me, args.Entries[idx:])
@@ -215,8 +225,8 @@ func (rf *Raft) leaderCommitRule() {
 		return
 	}
 
-	N := rf.commitIndex
 	for n := rf.commitIndex + 1; n <= rf.log.lastLog().Index; n++ {
+		// A leader is not allowed to update commitIndex to somewhere in a previous term 
 		if rf.log.at(n).Term != rf.currentTerm {
 			continue
 		}
@@ -229,18 +239,12 @@ func (rf *Raft) leaderCommitRule() {
 				counter++
 			}
 			if counter > len(rf.peers)/2 {
-				N = n
+				rf.commitIndex = n
+				DPrintf("[%v] leader尝试提交 commitIndex: %v", rf.me, rf.commitIndex)
+				rf.apply();
 				break
 			}
 		}
 
 	}
-
-	if N == rf.commitIndex {
-		return
-	}
-
-	rf.commitIndex = N
-	DPrintf("[%v] leader尝试提交 commitIndex: %v", rf.me, rf.commitIndex)
-	rf.apply()
 }
