@@ -2,6 +2,8 @@
 
 [地址](http://nil.csail.mit.edu/6.824/2021/schedule.html)
 
+> 目前完成lab2 C，剩下的后续补充
+
 [toc]
 
 
