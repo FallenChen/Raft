@@ -6,8 +6,6 @@
 
 [toc]
 
-
-
 必须看：
 
 * “raft-extended”
@@ -133,7 +131,15 @@ S2 是任期 6 的 Leader，S1 刚重启加入集群，S2 发送给 S1 的 `App
 
 Todo
 
-### 总结
+## 测试
+
+在raft文件夹下有*go-test-many.sh*
+``` bash
+# 要测试 2C 这个测试 2000 次，并行 8 个测试
+# 强烈建议在Linux下测试
+./go-test-many.sh 2000 8 2C
+```
+## 总结
 
 实验顺序：
 
